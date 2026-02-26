@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__supabase__apply_migration",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__list_migrations",
+      "mcp__supabase__get_advisors",
+      "mcp__supabase__get_publishable_keys",
+      "mcp__supabase__execute_sql",
+      "Bash(find /Users/stevenagh76/Documents/\"Aspire app 1\" -maxdepth 3 -name \"*.py\" -path \"*/app/routers/*\" 2>/dev/null | grep -E \"\\(book|recommend\\)\" | head -20)",
+      "Bash(find /Users/stevenagh76/Documents/\"Aspire app 1\"/supabase -name \"*.sql\" 2>/dev/null | head -10)",
+      "Bash(grep -r \"recommendation\\\\|similar\" /Users/stevenagh76/Documents/\"Aspire app 1\"/frontend/src --include=\"*.ts\" --include=\"*.tsx\" -l 2>/dev/null | head -22)",
+      "Bash(find /Users/stevenagh76/Documents/\"Aspire app 1\"/frontend -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -path \"*/app/*\" 2>/dev/null | grep -E \"\\(book|reader|librarian\\)\" | head -15)",
+      "WebSearch",
+      "WebFetch(domain:reference.langchain.com)",
+      "WebFetch(domain:medium.com)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/docs 2>/dev/null || echo \"not running\")",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/backend\" && python -c \"\nfrom app.services.embeddings import batch_generate_embeddings\ncount = batch_generate_embeddings\\(\\)\nprint\\(f'Generated embeddings for {count} book\\(s\\)'\\)\n\")",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/backend\" && python3 -c \"\nfrom app.services.embeddings import batch_generate_embeddings\ncount = batch_generate_embeddings\\(\\)\nprint\\(f'Generated embeddings for {count} book\\(s\\)'\\)\n\")",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/backend\" && ./venv/bin/python -c \"\nfrom app.services.embeddings import batch_generate_embeddings\ncount = batch_generate_embeddings\\(\\)\nprint\\(f'Generated embeddings for {count} book\\(s\\)'\\)\n\")",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/backend\" && ./venv/bin/python -c \"\nimport asyncio\nfrom app.services.google_books import fetch_similar_books\n\nresult = asyncio.run\\(fetch_similar_books\\(\n    title='The Alchemist',\n    author='Paulo Coelho', \n    genre='Fiction',\n    current_book_title='The Alchemist'\n\\)\\)\nprint\\(f'Got {len\\(result\\)} results'\\)\nfor r in result:\n    print\\(f'  - {r[\\\\\"title\\\\\"]} by {r[\\\\\"author\\\\\"]}'\\)\n\")",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/backend\" && ./venv/bin/python -c \"from app.routers.books import router; print\\('Backend imports OK'\\)\")",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/frontend\" && npx tsc --noEmit 2>&1 | head -30)",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/backend\" && ./venv/bin/python -c \"\nfrom app.core.supabase import get_supabase_admin\nsupabase = get_supabase_admin\\(\\)\nresult = supabase.table\\('books'\\).select\\('id, embedding'\\).eq\\('title', 'The Alchemist'\\).single\\(\\).execute\\(\\)\nemb = result.data['embedding']\nprint\\(f'Type: {type\\(emb\\)}'\\)\nprint\\(f'First 80 chars: {str\\(emb\\)[:80]}'\\)\n\")",
+      "Bash(cd \"/Users/stevenagh76/Documents/Aspire app 1/backend\" && ./venv/bin/python -c \"from app.services.recommendations import get_reader_recommendations; from app.routers.books import router; print\\('All imports OK'\\)\")"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
+}

@@ -1,0 +1,395 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.auth import require_librarian
+from app.core.supabase import get_supabase_admin
+from app.schemas.borrow import (
+    DashboardStats,
+    ReaderWithBorrowCount,
+    BorrowHistoryItem,
+    PendingReturnRecord,
+    ReturnRequest,
+    BorrowRecordResponse,
+)
+from app.services.overdue import mark_overdue_records
+from app.services.recommendations import get_reader_recommendations
+from app.schemas.recommendation import RecommendationResponse
+from collections import defaultdict
+from datetime import datetime, timezone, timedelta
+from typing import List
+
+router = APIRouter(prefix="/api/librarian", tags=["librarian"])
+
+
+@router.get("/dashboard", response_model=DashboardStats)
+async def get_dashboard(
+    current_user: dict = Depends(require_librarian),
+):
+    """Get dashboard statistics (librarian only)."""
+    mark_overdue_records()
+    supabase = get_supabase_admin()
+
+    total_books_result = supabase.table("books").select("id", count="exact").execute()
+    total_books = total_books_result.count or 0
+
+    checked_out_result = (
+        supabase.table("borrow_records")
+        .select("id", count="exact")
+        .in_("status", ["active", "overdue", "pending_return"])
+        .execute()
+    )
+    total_checked_out = checked_out_result.count or 0
+
+    overdue_result = (
+        supabase.table("borrow_records")
+        .select("id", count="exact")
+        .eq("status", "overdue")
+        .execute()
+    )
+    total_overdue = overdue_result.count or 0
+
+    pending_returns_result = (
+        supabase.table("borrow_records")
+        .select("id", count="exact")
+        .eq("status", "pending_return")
+        .execute()
+    )
+    total_pending_returns = pending_returns_result.count or 0
+
+    readers_result = (
+        supabase.table("users")
+        .select("id", count="exact")
+        .eq("role", "reader")
+        .execute()
+    )
+    total_readers = readers_result.count or 0
+
+    return DashboardStats(
+        total_books=total_books,
+        total_checked_out=total_checked_out,
+        total_overdue=total_overdue,
+        total_readers=total_readers,
+        total_pending_returns=total_pending_returns,
+    )
+
+
+@router.get("/readers", response_model=List[ReaderWithBorrowCount])
+async def get_readers(
+    current_user: dict = Depends(require_librarian),
+):
+    """Get all readers with their borrow counts (librarian only)."""
+    supabase = get_supabase_admin()
+
+    readers_result = supabase.table("users").select("*").eq("role", "reader").execute()
+    readers = readers_result.data or []
+
+    if not readers:
+        return []
+
+    reader_ids = [r["id"] for r in readers]
+
+    borrows_result = (
+        supabase.table("borrow_records")
+        .select("user_id, status")
+        .in_("user_id", reader_ids)
+        .execute()
+    )
+    borrows = borrows_result.data or []
+
+    active_counts: dict = defaultdict(int)
+    total_counts: dict = defaultdict(int)
+    for borrow in borrows:
+        uid = borrow["user_id"]
+        total_counts[uid] += 1
+        if borrow["status"] in ("active", "overdue", "pending_return"):
+            active_counts[uid] += 1
+
+    result = []
+    for reader in readers:
+        uid = reader["id"]
+        result.append(
+            ReaderWithBorrowCount(
+                **reader,
+                active_borrow_count=active_counts[uid],
+                total_borrow_count=total_counts[uid],
+            )
+        )
+    return result
+
+
+@router.get("/readers/{user_id}", response_model=ReaderWithBorrowCount)
+async def get_reader(
+    user_id: str,
+    current_user: dict = Depends(require_librarian),
+):
+    """Get a specific reader's profile with borrow counts (librarian only)."""
+    supabase = get_supabase_admin()
+
+    reader_result = supabase.table("users").select("*").eq("id", user_id).single().execute()
+    if not reader_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reader not found")
+
+    reader = reader_result.data
+
+    borrows_result = (
+        supabase.table("borrow_records")
+        .select("status")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    borrows = borrows_result.data or []
+    active_count = sum(1 for b in borrows if b["status"] in ("active", "overdue", "pending_return"))
+
+    return ReaderWithBorrowCount(
+        **reader,
+        active_borrow_count=active_count,
+        total_borrow_count=len(borrows),
+    )
+
+
+@router.get("/readers/{user_id}/history", response_model=List[BorrowHistoryItem])
+async def get_reader_history(
+    user_id: str,
+    current_user: dict = Depends(require_librarian),
+):
+    """Get a specific reader's borrow history (librarian only)."""
+    supabase = get_supabase_admin()
+
+    result = (
+        supabase.table("borrow_records")
+        .select("*, book:books(id, title, author, cover_url)")
+        .eq("user_id", user_id)
+        .order("borrowed_at", desc=True)
+        .execute()
+    )
+
+    return result.data or []
+
+
+@router.get("/pending-returns", response_model=List[PendingReturnRecord])
+async def get_pending_returns(
+    current_user: dict = Depends(require_librarian),
+):
+    """Get all borrow records with pending return requests (librarian only)."""
+    supabase = get_supabase_admin()
+
+    result = (
+        supabase.table("borrow_records")
+        .select("*, book:books(id, title, author, cover_url), user:users(id, name, email, avatar_url)")
+        .eq("status", "pending_return")
+        .order("due_date", desc=False)
+        .execute()
+    )
+
+    return result.data or []
+
+
+@router.post("/approve-return", response_model=BorrowRecordResponse)
+async def approve_return(
+    request: ReturnRequest,
+    current_user: dict = Depends(require_librarian),
+):
+    """Approve a pending return request (librarian only)."""
+    supabase = get_supabase_admin()
+    record_id = request.borrow_record_id
+
+    # Fetch the borrow record
+    record_result = (
+        supabase.table("borrow_records").select("*").eq("id", record_id).single().execute()
+    )
+    if not record_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Borrow record not found"
+        )
+
+    record = record_result.data
+
+    if record["status"] != "pending_return":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This record does not have a pending return request",
+        )
+
+    # Complete the return
+    now = datetime.now(timezone.utc)
+    updated_result = (
+        supabase.table("borrow_records")
+        .update({"returned_at": now.isoformat(), "status": "returned"})
+        .eq("id", record_id)
+        .execute()
+    )
+    if not updated_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update borrow record",
+        )
+
+    # Increment available_copies; if book was checked_out, set to available
+    book_result = (
+        supabase.table("books").select("*").eq("id", record["book_id"]).single().execute()
+    )
+    if book_result.data:
+        book = book_result.data
+        new_available = book["available_copies"] + 1
+        book_update = {"available_copies": new_available}
+        if book["status"] == "checked_out":
+            book_update["status"] = "available"
+        supabase.table("books").update(book_update).eq("id", book["id"]).execute()
+
+    return updated_result.data[0]
+
+
+@router.get("/readers/{user_id}/recommendations", response_model=RecommendationResponse)
+async def get_reader_recommendations_endpoint(
+    user_id: str,
+    current_user: dict = Depends(require_librarian),
+):
+    """Get AI-powered personalized book recommendations for a reader (librarian only)."""
+    supabase = get_supabase_admin()
+
+    # Validate target user exists
+    reader_result = supabase.table("users").select("id").eq("id", user_id).single().execute()
+    if not reader_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reader not found")
+
+    result = get_reader_recommendations(user_id)
+    return result
+
+
+@router.get("/pending-checkouts", response_model=List[PendingReturnRecord])
+async def get_pending_checkouts(
+    current_user: dict = Depends(require_librarian),
+):
+    """Get all borrow records awaiting checkout approval (librarian only)."""
+    supabase = get_supabase_admin()
+    result = (
+        supabase.table("borrow_records")
+        .select("*, book:books(id, title, author, cover_url), user:users(id, name, email, avatar_url)")
+        .eq("status", "pending")
+        .order("created_at", desc=False)
+        .execute()
+    )
+    return result.data or []
+
+
+@router.post("/borrow/{borrow_id}/approve", response_model=BorrowRecordResponse)
+async def approve_checkout(
+    borrow_id: str,
+    current_user: dict = Depends(require_librarian),
+):
+    """Approve a pending checkout request (librarian only)."""
+    supabase = get_supabase_admin()
+
+    record_result = (
+        supabase.table("borrow_records").select("*").eq("id", borrow_id).single().execute()
+    )
+    if not record_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Borrow record not found")
+
+    record = record_result.data
+    if record["status"] != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This record is not pending approval",
+        )
+
+    # Check book still has available copies
+    book_result = supabase.table("books").select("*").eq("id", record["book_id"]).single().execute()
+    if not book_result.data or book_result.data["available_copies"] <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No copies available for this book",
+        )
+
+    # Approve: set status to active, set borrowed_at + due_date to now
+    now = datetime.now(timezone.utc)
+    due_date = now + timedelta(days=14)
+    updated = (
+        supabase.table("borrow_records")
+        .update({
+            "status": "active",
+            "borrowed_at": now.isoformat(),
+            "due_date": due_date.isoformat(),
+        })
+        .eq("id", borrow_id)
+        .execute()
+    )
+    if not updated.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to approve checkout",
+        )
+
+    # Decrement available_copies
+    book = book_result.data
+    new_available = book["available_copies"] - 1
+    book_update: dict = {"available_copies": new_available}
+    if new_available == 0:
+        book_update["status"] = "checked_out"
+    supabase.table("books").update(book_update).eq("id", book["id"]).execute()
+
+    return updated.data[0]
+
+
+@router.post("/borrow/{borrow_id}/reject", status_code=status.HTTP_204_NO_CONTENT)
+async def reject_checkout(
+    borrow_id: str,
+    current_user: dict = Depends(require_librarian),
+):
+    """Reject a pending checkout request (librarian only)."""
+    supabase = get_supabase_admin()
+
+    record_result = (
+        supabase.table("borrow_records").select("*").eq("id", borrow_id).single().execute()
+    )
+    if not record_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Borrow record not found")
+
+    if record_result.data["status"] != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This record is not pending approval",
+        )
+
+    # Delete the rejected borrow record
+    supabase.table("borrow_records").delete().eq("id", borrow_id).execute()
+    return None
+
+
+@router.post("/readers/{user_id}/send-recommendations")
+async def send_recommendations_email(
+    user_id: str,
+    current_user: dict = Depends(require_librarian),
+):
+    """Generate recommendations and send them to a reader via email (librarian only)."""
+    from app.services.email import send_recommendation_email
+
+    supabase = get_supabase_admin()
+
+    # Get reader info
+    reader_result = supabase.table("users").select("*").eq("id", user_id).single().execute()
+    if not reader_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reader not found")
+
+    reader = reader_result.data
+
+    # Generate recommendations
+    rec_result = get_reader_recommendations(user_id)
+    if not rec_result["books"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=rec_result.get("message", "No recommendations available"),
+        )
+
+    # Send email
+    success = send_recommendation_email(
+        reader_email=reader["email"],
+        reader_name=reader.get("name"),
+        recommendations=rec_result["books"],
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send email. Check RESEND_API_KEY configuration.",
+        )
+
+    return {"message": f"Recommendations sent to {reader['email']}"}
