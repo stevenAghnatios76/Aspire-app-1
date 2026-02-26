@@ -81,10 +81,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [supabase, fetchProfile]);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     const appUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-      window.location.origin;
+      window.location.origin ||
+      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
 
     await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -92,14 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         redirectTo: `${appUrl}/auth/callback`,
       },
     });
-  };
+  }, [supabase]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
     setSession(null);
-  };
+  }, [supabase]);
 
   const getToken = useCallback(async (): Promise<string | null> => {
     const {

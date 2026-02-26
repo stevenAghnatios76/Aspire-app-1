@@ -104,7 +104,12 @@ supabase/migrations/005_borrow_status_pending.sql
 
 Optional seed data: `supabase/seed_books.sql`
 
-Enable **Google OAuth** in Supabase → Auth → Providers → Google, with redirect URL `http://localhost:3000/auth/callback`.
+Enable **Google OAuth** in Supabase → Auth → Providers → Google.
+In Supabase → Auth → URL Configuration:
+- Set **Site URL** to your deployed frontend URL (for example, `https://aspire-app-1-1.onrender.com`).
+- Add both callback URLs to **Redirect URLs**:
+    - `http://localhost:3000/auth/callback`
+    - `https://aspire-app-1-1.onrender.com/auth/callback`
 
 ### 2. Backend
 
