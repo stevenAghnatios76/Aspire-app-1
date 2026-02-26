@@ -138,6 +138,7 @@ npm run dev
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key |
+| `NEXT_PUBLIC_SITE_URL` | Recommended | Frontend base URL for OAuth callback redirect |
 | `NEXT_PUBLIC_API_URL` | Yes | FastAPI URL (default `http://localhost:8000`) |
 
 ### 4. Promote a Librarian

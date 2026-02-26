@@ -20,4 +20,5 @@ Create `frontend/.env.local` from `frontend/.env.local.example` and set:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SITE_URL` (recommended for production OAuth redirects)
 - `NEXT_PUBLIC_API_URL`

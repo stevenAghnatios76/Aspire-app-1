@@ -82,10 +82,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase, fetchProfile]);
 
   const signInWithGoogle = async () => {
+    const appUrl =
+      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+      window.location.origin;
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${appUrl}/auth/callback`,
       },
     });
   };
