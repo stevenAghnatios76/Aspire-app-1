@@ -248,6 +248,7 @@ All endpoints require `Authorization: Bearer <token>` unless noted.
 
 - [ ] Set `FRONTEND_URL` in backend to production frontend origin
 - [ ] Set `NEXT_PUBLIC_API_URL` in frontend to production backend URL
+- [ ] For Render backend, set Root Directory to `backend` so `backend/runtime.txt` (Python 3.12) is applied
 - [ ] Configure Supabase OAuth redirect to production callback URL
 - [ ] Store all secrets in provider secret managers (never in repo)
 - [ ] Enforce HTTPS on both frontend and backend domains
