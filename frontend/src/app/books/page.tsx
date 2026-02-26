@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { api, type Book, type PaginatedBooks } from "@/lib/api";
 import Link from "next/link";
@@ -13,19 +13,29 @@ export default function BooksPage() {
   const [genreFilter, setGenreFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [searchMode, setSearchMode] = useState<"ai" | "classic">("ai");
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchBooks = useCallback(async (page = 1) => {
     setIsLoading(true);
     try {
       const token = await getToken();
       if (!token) {
-        console.warn("No authentication token available");
         setIsLoading(false);
         return;
       }
 
       let result: PaginatedBooks;
-      if (search || genreFilter || statusFilter) {
+
+      if (searchMode === "ai" && search) {
+        result = await api.smartSearchBooks(token, {
+          q: search,
+          genre: genreFilter,
+          status: statusFilter,
+          page,
+          limit: 12,
+        });
+      } else if (search || genreFilter || statusFilter) {
         result = await api.searchBooks(token, {
           q: search,
           genre: genreFilter,
@@ -47,11 +57,24 @@ export default function BooksPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [search, genreFilter, statusFilter]);
+  }, [search, genreFilter, statusFilter, searchMode, getToken]);
 
+  // Debounce for AI mode, immediate for classic/filters
   useEffect(() => {
-    fetchBooks(1);
-  }, [fetchBooks]);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (searchMode === "ai" && search) {
+      // Debounce AI searches by 500ms
+      debounceRef.current = setTimeout(() => fetchBooks(1), 500);
+    } else {
+      // Classic search / filters / no search: fire immediately
+      fetchBooks(1);
+    }
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search, genreFilter, statusFilter, searchMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this book?")) return;
@@ -94,17 +117,49 @@ export default function BooksPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <input
-          type="text"
-          placeholder="Search by title, author, genre, ISBN..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-[250px] px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-        />
+        <div className="flex-1 min-w-[250px] relative">
+          <input
+            type="text"
+            placeholder={
+              searchMode === "ai"
+                ? "Describe what you'd like to read..."
+                : "Search by title, author, genre, ISBN..."
+            }
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          />
+        </div>
+        <button
+          onClick={() => setSearchMode(searchMode === "ai" ? "classic" : "ai")}
+          className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center gap-1.5 ${
+            searchMode === "ai"
+              ? "bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100"
+              : "bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100"
+          }`}
+          title={searchMode === "ai" ? "Switch to classic search" : "Switch to AI search"}
+        >
+          {searchMode === "ai" ? (
+            <>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+              </svg>
+              AI
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              Classic
+            </>
+          )}
+        </button>
         <select
           value={genreFilter}
           onChange={(e) => setGenreFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <option value="">All Genres</option>
           <option value="Fiction">Fiction</option>
@@ -121,7 +176,7 @@ export default function BooksPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <option value="">All Status</option>
           <option value="available">Available</option>
@@ -150,7 +205,7 @@ export default function BooksPage() {
                   className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow"
                 >
                   <Link href={`/books/${book.id}`}>
-                    <div className="aspect-[3/4] bg-gray-100 flex items-center justify-center">
+                    <div className="aspect-[3/4] bg-gray-100 flex items-center justify-center relative">
                       {book.cover_url ? (
                         <img
                           src={book.cover_url}
@@ -159,6 +214,11 @@ export default function BooksPage() {
                         />
                       ) : (
                         <span className="text-4xl">📖</span>
+                      )}
+                      {searchMode === "ai" && book.relevance != null && (
+                        <span className="absolute top-2 right-2 bg-purple-600 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                          {Math.round(book.relevance * 100)}% match
+                        </span>
                       )}
                     </div>
                   </Link>
@@ -203,7 +263,7 @@ export default function BooksPage() {
               <button
                 onClick={() => fetchBooks(pagination.page - 1)}
                 disabled={pagination.page <= 1}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
               >
                 Previous
               </button>
@@ -213,7 +273,7 @@ export default function BooksPage() {
               <button
                 onClick={() => fetchBooks(pagination.page + 1)}
                 disabled={pagination.page >= pagination.total_pages}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
               >
                 Next
               </button>

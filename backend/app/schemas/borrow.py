@@ -59,6 +59,7 @@ class DashboardStats(BaseModel):
     total_overdue: int
     total_readers: int
     total_pending_returns: int = 0
+    total_pending_requests: int = 0
 
 
 class ReaderWithBorrowCount(BaseModel):

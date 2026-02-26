@@ -45,12 +45,26 @@ export default function Navbar() {
             </>
           )}
           {!isLibrarian && (
-            <Link
-              href="/reader/history"
-              className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-            >
-              My Borrows
-            </Link>
+            <>
+              <Link
+                href="/reader/discover"
+                className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+              >
+                Discover
+              </Link>
+              <Link
+                href="/reader/history"
+                className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+              >
+                My Borrows
+              </Link>
+              <Link
+                href="/reader/requests"
+                className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+              >
+                My Requests
+              </Link>
+            </>
           )}
         </div>
 

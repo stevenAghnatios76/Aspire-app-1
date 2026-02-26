@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from app.core.auth import get_current_user, require_librarian
 from app.core.supabase import get_supabase_admin
-from app.schemas.book import BookCreate, BookUpdate, BookResponse, PaginatedBooks
+from app.schemas.book import BookCreate, BookUpdate, BookResponse, PaginatedBooks, BookSummaryResponse
 from app.schemas.recommendation import SimilarBook
+from app.services.book_summary import get_or_generate_summary
+from app.core.rate_limit import summary_limiter
 from app.services.embeddings import (
     get_embedding_text,
     generate_embedding,
@@ -67,6 +69,16 @@ async def get_book(
         )
 
     return result.data
+
+
+@router.get("/{book_id}/summary", response_model=BookSummaryResponse)
+async def get_book_summary(
+    book_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Get an AI-generated summary for a book (cached)."""
+    summary_limiter.check(current_user["id"])
+    return get_or_generate_summary(book_id)
 
 
 @router.get("/{book_id}/similar", response_model=list[SimilarBook])

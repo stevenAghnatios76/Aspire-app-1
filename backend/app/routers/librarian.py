@@ -9,12 +9,14 @@ from app.schemas.borrow import (
     ReturnRequest,
     BorrowRecordResponse,
 )
+from app.schemas.book_request import BookRequestOut, BookRequestReview
 from app.services.overdue import mark_overdue_records
 from app.services.recommendations import get_reader_recommendations
 from app.schemas.recommendation import RecommendationResponse
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
-from typing import List
+from typing import List, Optional
+from fastapi import Query
 
 router = APIRouter(prefix="/api/librarian", tags=["librarian"])
 
@@ -62,12 +64,21 @@ async def get_dashboard(
     )
     total_readers = readers_result.count or 0
 
+    pending_requests_result = (
+        supabase.table("book_requests")
+        .select("id", count="exact")
+        .eq("status", "pending")
+        .execute()
+    )
+    total_pending_requests = pending_requests_result.count or 0
+
     return DashboardStats(
         total_books=total_books,
         total_checked_out=total_checked_out,
         total_overdue=total_overdue,
         total_readers=total_readers,
         total_pending_returns=total_pending_returns,
+        total_pending_requests=total_pending_requests,
     )
 
 
@@ -393,3 +404,122 @@ async def send_recommendations_email(
         )
 
     return {"message": f"Recommendations sent to {reader['email']}"}
+
+
+@router.get("/book-requests", response_model=List[BookRequestOut])
+async def get_book_requests(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    current_user: dict = Depends(require_librarian),
+):
+    """Get all book requests with requester info (librarian only)."""
+    supabase = get_supabase_admin()
+
+    query = supabase.table("book_requests").select("*, requester:users!book_requests_user_id_fkey(name, email)")
+
+    if status_filter:
+        query = query.eq("status", status_filter)
+
+    result = query.order("created_at", desc=True).execute()
+    records = result.data or []
+
+    # Flatten requester info
+    out = []
+    for r in records:
+        requester = r.pop("requester", None) or {}
+        r["requester_name"] = requester.get("name")
+        r["requester_email"] = requester.get("email")
+        out.append(r)
+    return out
+
+
+@router.post("/book-requests/{request_id}/review", response_model=BookRequestOut)
+async def review_book_request(
+    request_id: str,
+    review: BookRequestReview,
+    current_user: dict = Depends(require_librarian),
+):
+    """Approve or reject a book request (librarian only)."""
+    supabase = get_supabase_admin()
+
+    # Fetch the request
+    req_result = (
+        supabase.table("book_requests")
+        .select("*")
+        .eq("id", request_id)
+        .single()
+        .execute()
+    )
+    if not req_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book request not found")
+
+    request_data = req_result.data
+    if request_data["status"] != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This request has already been reviewed.",
+        )
+
+    now = datetime.now(timezone.utc)
+    new_status = "approved" if review.action == "approve" else "rejected"
+
+    update_data: dict = {
+        "status": new_status,
+        "reviewed_by": current_user["id"],
+        "reviewed_at": now.isoformat(),
+    }
+    if review.note:
+        update_data["librarian_note"] = review.note
+
+    updated = (
+        supabase.table("book_requests")
+        .update(update_data)
+        .eq("id", request_id)
+        .execute()
+    )
+    if not updated.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update book request.",
+        )
+
+    record = updated.data[0]
+
+    # If approved, optionally auto-create the book in catalog
+    if review.action == "approve":
+        book_data = {
+            "title": request_data["title"],
+            "status": "available",
+            "total_copies": 1,
+            "available_copies": 1,
+        }
+        if request_data.get("author"):
+            book_data["author"] = request_data["author"]
+        else:
+            book_data["author"] = "Unknown"
+        if request_data.get("isbn"):
+            book_data["isbn"] = request_data["isbn"]
+        if request_data.get("cover_url"):
+            book_data["cover_url"] = request_data["cover_url"]
+        if request_data.get("description"):
+            book_data["description"] = request_data["description"]
+
+        try:
+            supabase.table("books").insert(book_data).execute()
+            # Mark as fulfilled
+            supabase.table("book_requests").update({"status": "fulfilled"}).eq("id", request_id).execute()
+            record["status"] = "fulfilled"
+        except Exception:
+            pass  # Book creation is best-effort
+
+    # Fetch requester info
+    user_result = (
+        supabase.table("users")
+        .select("name, email")
+        .eq("id", request_data["user_id"])
+        .maybe_single()
+        .execute()
+    )
+    record["requester_name"] = user_result.data.get("name") if user_result.data else None
+    record["requester_email"] = user_result.data.get("email") if user_result.data else None
+
+    return record

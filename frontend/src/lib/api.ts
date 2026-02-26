@@ -54,6 +54,7 @@ export interface Book {
   available_copies: number;
   status: "available" | "checked_out" | "unavailable";
   created_at: string;
+  relevance?: number;
 }
 
 export interface PaginatedBooks {
@@ -124,6 +125,7 @@ export interface DashboardStats {
   total_overdue: number;
   total_readers: number;
   total_pending_returns: number;
+  total_pending_requests: number;
 }
 
 export interface ReaderWithBorrowCount {
@@ -168,6 +170,57 @@ export interface EmbeddingGenerationResult {
 export interface CSVImportResult {
   imported: number;
   errors: { row: number; reason: string }[];
+}
+
+// ---------- Book Summary types ----------
+
+export interface BookSummaryResponse {
+  book_id: string;
+  summary: string;
+  generated_at: string;
+  cached: boolean;
+}
+
+// ---------- Discovery types ----------
+
+export interface DiscoveredBook {
+  title: string;
+  author: string;
+  description: string | null;
+  cover_url: string | null;
+  source_url: string | null;
+  isbn: string | null;
+  relevance_reason: string | null;
+  in_catalog: boolean;
+  catalog_book_id: string | null;
+  available_copies: number | null;
+}
+
+export interface DiscoveryResponse {
+  books: DiscoveredBook[];
+  intent: Record<string, unknown>;
+  total: number;
+}
+
+// ---------- Book Request types ----------
+
+export interface BookRequest {
+  id: string;
+  user_id: string;
+  title: string;
+  author: string | null;
+  isbn: string | null;
+  cover_url: string | null;
+  source_url: string | null;
+  description: string | null;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected" | "fulfilled";
+  librarian_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  requester_name: string | null;
+  requester_email: string | null;
 }
 
 // ---------- API functions ----------
@@ -337,5 +390,85 @@ export const api = {
     apiFetch<{ message: string }>(
       `/api/librarian/readers/${userId}/send-recommendations`,
       { token, method: "POST" }
+    ),
+
+  // AI Book Summary
+  getBookSummary: (token: string, bookId: string) =>
+    apiFetch<BookSummaryResponse>(`/api/books/${bookId}/summary`, { token }),
+
+  // Smart Search
+  smartSearchBooks: (
+    token: string,
+    params: {
+      q?: string;
+      genre?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    }
+  ) => {
+    const searchParams = new URLSearchParams();
+    if (params.q) searchParams.set("q", params.q);
+    if (params.genre) searchParams.set("genre", params.genre);
+    if (params.status) searchParams.set("status", params.status);
+    searchParams.set("page", String(params.page || 1));
+    searchParams.set("limit", String(params.limit || 20));
+    return apiFetch<PaginatedBooks>(
+      `/api/books/smart-search?${searchParams.toString()}`,
+      { token }
+    );
+  },
+
+  // AI Book Discovery
+  discoverBooks: (token: string, paragraph: string) =>
+    apiFetch<DiscoveryResponse>("/api/books/discover", {
+      token,
+      method: "POST",
+      body: JSON.stringify({ paragraph }),
+    }),
+
+  // Book Requests (reader)
+  createBookRequest: (
+    token: string,
+    data: {
+      title: string;
+      author?: string;
+      isbn?: string;
+      cover_url?: string;
+      source_url?: string;
+      description?: string;
+      reason?: string;
+    }
+  ) =>
+    apiFetch<BookRequest>("/api/book-requests", {
+      token,
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getMyBookRequests: (token: string) =>
+    apiFetch<BookRequest[]>("/api/book-requests", { token }),
+
+  // Book Requests (librarian)
+  getLibrarianBookRequests: (token: string, status?: string) => {
+    const params = status ? `?status=${status}` : "";
+    return apiFetch<BookRequest[]>(`/api/librarian/book-requests${params}`, {
+      token,
+    });
+  },
+
+  reviewBookRequest: (
+    token: string,
+    requestId: string,
+    action: "approve" | "reject",
+    note?: string
+  ) =>
+    apiFetch<BookRequest>(
+      `/api/librarian/book-requests/${requestId}/review`,
+      {
+        token,
+        method: "POST",
+        body: JSON.stringify({ action, note }),
+      }
     ),
 };

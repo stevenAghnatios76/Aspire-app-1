@@ -36,6 +36,7 @@ class BookResponse(BookBase):
     id: str
     status: str
     created_at: datetime
+    relevance: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -47,3 +48,10 @@ class PaginatedBooks(BaseModel):
     page: int
     limit: int
     total_pages: int
+
+
+class BookSummaryResponse(BaseModel):
+    book_id: str
+    summary: str
+    generated_at: datetime
+    cached: bool

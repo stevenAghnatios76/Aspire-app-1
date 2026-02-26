@@ -10,6 +10,7 @@ import {
   type PendingReturnRecord,
   type EmbeddingGenerationResult,
   type CSVImportResult,
+  type BookRequest,
 } from "@/lib/api";
 import Link from "next/link";
 
@@ -57,23 +58,28 @@ export default function LibrarianDashboardPage() {
   const [isImportingCSV, setIsImportingCSV] = useState(false);
   const [pendingCheckouts, setPendingCheckouts] = useState<PendingReturnRecord[]>([]);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [bookRequests, setBookRequests] = useState<BookRequest[]>([]);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState<Record<string, string>>({});
 
   const loadDashboard = useCallback(async () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const [dashData, overdueData, readersData, pendingData, pendingCheckoutsData] = await Promise.all([
+      const [dashData, overdueData, readersData, pendingData, pendingCheckoutsData, bookRequestsData] = await Promise.all([
         api.getDashboard(token),
         api.getOverdueRecords(token),
         api.getReaders(token),
         api.getPendingReturns(token),
         api.getPendingCheckouts(token),
+        api.getLibrarianBookRequests(token, "pending"),
       ]);
       setStats(dashData);
       setOverdue(overdueData);
       setReaders(readersData);
       setPendingReturns(pendingData);
       setPendingCheckouts(pendingCheckoutsData);
+      setBookRequests(bookRequestsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
     } finally {
@@ -107,11 +113,12 @@ export default function LibrarianDashboardPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-10">
           <StatCard label="Total Books" value={stats.total_books} colorClass="bg-indigo-600" />
           <StatCard label="Checked Out" value={stats.total_checked_out} colorClass="bg-yellow-500" />
           <StatCard label="Overdue" value={stats.total_overdue} colorClass="bg-red-500" />
           <StatCard label="Pending Returns" value={stats.total_pending_returns} colorClass="bg-orange-500" />
+          <StatCard label="Book Requests" value={stats.total_pending_requests} colorClass="bg-purple-500" />
           <StatCard label="Readers" value={stats.total_readers} colorClass="bg-green-600" />
         </div>
       )}
@@ -254,7 +261,101 @@ export default function LibrarianDashboardPage() {
         )}
       </section>
 
-      {/* Overdue records */}
+      {/* Book Requests */}
+      <section className="mb-10">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Pending Book Requests</h2>
+        {bookRequests.length === 0 ? (
+          <p className="text-gray-500 italic text-sm">No pending book requests.</p>
+        ) : (
+          <div className="space-y-3">
+            {bookRequests.map((req) => (
+              <div
+                key={req.id}
+                className="flex flex-col gap-3 p-4 bg-purple-50 border border-purple-200 rounded-xl"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-900">{req.title}</p>
+                    {req.author && <p className="text-sm text-gray-600">by {req.author}</p>}
+                    {req.reason && (
+                      <p className="text-sm text-gray-500 mt-1 italic">&quot;{req.reason}&quot;</p>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-600 sm:text-right">
+                    <p>{req.requester_name || req.requester_email || "Unknown"}</p>
+                    <p className="text-gray-400">{formatDate(req.created_at)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Optional note..."
+                    value={reviewNote[req.id] || ""}
+                    onChange={(e) =>
+                      setReviewNote((prev) => ({ ...prev, [req.id]: e.target.value }))
+                    }
+                    className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    onClick={async () => {
+                      setReviewingId(req.id);
+                      try {
+                        const token = await getToken();
+                        if (!token) return;
+                        await api.reviewBookRequest(
+                          token,
+                          req.id,
+                          "approve",
+                          reviewNote[req.id] || undefined
+                        );
+                        setBookRequests((prev) => prev.filter((r) => r.id !== req.id));
+                        const refreshedStats = await api.getDashboard(token);
+                        setStats(refreshedStats);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to approve request");
+                      } finally {
+                        setReviewingId(null);
+                      }
+                    }}
+                    disabled={reviewingId === req.id}
+                    className="px-4 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60 flex-shrink-0"
+                  >
+                    {reviewingId === req.id ? "..." : "Approve & Add"}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setReviewingId(req.id);
+                      try {
+                        const token = await getToken();
+                        if (!token) return;
+                        await api.reviewBookRequest(
+                          token,
+                          req.id,
+                          "reject",
+                          reviewNote[req.id] || undefined
+                        );
+                        setBookRequests((prev) => prev.filter((r) => r.id !== req.id));
+                        const refreshedStats = await api.getDashboard(token);
+                        setStats(refreshedStats);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to reject request");
+                      } finally {
+                        setReviewingId(null);
+                      }
+                    }}
+                    disabled={reviewingId === req.id}
+                    className="px-4 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors disabled:opacity-60 flex-shrink-0"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Pending Checkouts */}
       <section className="mb-10">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Pending Checkouts</h2>
         {pendingCheckouts.length === 0 ? (

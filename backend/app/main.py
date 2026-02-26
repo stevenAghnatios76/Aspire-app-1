@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.routers import books, search, auth, borrow, librarian
+from app.routers import books, search, auth, borrow, librarian, smart_search, discovery, book_requests
 
 settings = get_settings()
 
@@ -20,9 +20,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers — search must be registered BEFORE books to avoid /search matching /{book_id}
+# Routers — order matters: specific paths before /{book_id} catch-all
+app.include_router(smart_search.router)
 app.include_router(search.router)
+app.include_router(discovery.router)
 app.include_router(borrow.router)
+app.include_router(book_requests.router)
 app.include_router(librarian.router)
 app.include_router(books.router)
 app.include_router(auth.router)
