@@ -16,8 +16,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Mini Library",
-  description: "A mini library management system with AI-powered recommendations",
+  title: "Aspire Library",
+  description: "Production-ready library management platform with AI-powered search, discovery, and recommendations",
 };
 
 export default function RootLayout({

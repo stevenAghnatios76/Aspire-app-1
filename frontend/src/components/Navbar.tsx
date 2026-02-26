@@ -20,7 +20,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Link href="/books" className="text-xl font-bold text-indigo-600">
-            📚 Mini Library
+            📚 Aspire Library
           </Link>
           <Link
             href="/books"
@@ -69,6 +69,12 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-4">
+          <Link
+            href="/info"
+            className="text-sm font-semibold px-3 py-1.5 rounded-full border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+          >
+            Info
+          </Link>
           <div className="flex items-center gap-2">
             {profile.avatar_url && (
               <img
