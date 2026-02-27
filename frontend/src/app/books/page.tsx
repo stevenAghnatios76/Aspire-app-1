@@ -7,7 +7,7 @@ import Link from "next/link";
 import Image from "next/image";
 
 export default function BooksPage() {
-  const { getToken, isLibrarian } = useAuth();
+  const { getToken, isLibrarian, session } = useAuth();
   const [books, setBooks] = useState<Book[]>([]);
   const [pagination, setPagination] = useState({ page: 1, total_pages: 1, total: 0 });
   const [search, setSearch] = useState("");
@@ -62,6 +62,9 @@ export default function BooksPage() {
 
   // Debounce for AI mode, immediate for classic/filters
   useEffect(() => {
+    // Don't attempt to fetch until auth session is available
+    if (!session) return;
+
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (searchMode === "ai" && search) {
@@ -75,7 +78,7 @@ export default function BooksPage() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [search, genreFilter, statusFilter, searchMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, genreFilter, statusFilter, searchMode, session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this book?")) return;

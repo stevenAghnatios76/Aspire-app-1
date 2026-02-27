@@ -110,10 +110,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionRef.current = null;
   }, [supabase]);
 
-  // Return cached session token — no extra getSession() round trip
+  // Return cached session token, falling back to getSession() if the
+  // INITIAL_SESSION event hasn't fired yet (race on first page load).
   const getToken = useCallback(async (): Promise<string | null> => {
-    return sessionRef.current?.access_token ?? null;
-  }, []);
+    if (sessionRef.current) {
+      return sessionRef.current.access_token;
+    }
+    // Session ref not yet populated — ask Supabase directly
+    const { data } = await supabase.auth.getSession();
+    if (data.session) {
+      sessionRef.current = data.session;
+      return data.session.access_token;
+    }
+    return null;
+  }, [supabase]);
 
   const value = useMemo(
     () => ({
