@@ -63,14 +63,23 @@ interface InfoData {
 /*  Tab type                                                           */
 /* ------------------------------------------------------------------ */
 
-type TabKey = "core" | "ai" | "librarian" | "reference";
+type TabKey = "core" | "ai" | "advanced_ai" | "reader" | "librarian" | "reference";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "core", label: "Core" },
   { key: "ai", label: "AI Features" },
+  { key: "advanced_ai", label: "Advanced AI" },
+  { key: "reader", label: "Reader" },
   { key: "librarian", label: "Librarian" },
   { key: "reference", label: "Reference" },
 ];
+
+/* AI feature split: first 3 are standard AI, last 3 are advanced */
+const ADVANCED_AI_NAMES = new Set([
+  "Similar Books",
+  "Personalized Reader Recommendations",
+  "Auto-Embedding Generation",
+]);
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -357,7 +366,7 @@ export default function InfoPage() {
         <div className="border-t border-gray-200" />
 
         {/* ── Quick Stats ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
             <p className="text-2xl font-bold text-indigo-600">
               {data.features.core.length}
@@ -366,18 +375,30 @@ export default function InfoPage() {
           </div>
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
             <p className="text-2xl font-bold text-purple-600">
-              {data.features.ai_powered.length}
+              {data.features.ai_powered.filter((f) => !ADVANCED_AI_NAMES.has(f.name)).length}
             </p>
             <p className="text-xs text-gray-500">AI Features</p>
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
             <p className="text-2xl font-bold text-amber-600">
+              {data.features.ai_powered.filter((f) => ADVANCED_AI_NAMES.has(f.name)).length}
+            </p>
+            <p className="text-xs text-gray-500">Advanced AI</p>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+            <p className="text-2xl font-bold text-blue-600">
+              {data.walkthrough.reader_flow.length}
+            </p>
+            <p className="text-xs text-gray-500">Reader Steps</p>
+          </div>
+          <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
+            <p className="text-2xl font-bold text-teal-600">
               {data.features.librarian_tools.length}
             </p>
             <p className="text-xs text-gray-500">Librarian Tools</p>
           </div>
-          <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
-            <p className="text-2xl font-bold text-teal-600">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+            <p className="text-2xl font-bold text-gray-600">
               {data.endpoints.length}
             </p>
             <p className="text-xs text-gray-500">API Endpoints</p>
@@ -387,7 +408,7 @@ export default function InfoPage() {
         {/* ── Tabs ── */}
         <div>
           {/* Tab triggers */}
-          <div className="grid grid-cols-4 bg-gray-100 rounded-lg p-1">
+          <div className="grid grid-cols-3 md:grid-cols-6 bg-gray-100 rounded-lg p-1">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
@@ -429,9 +450,84 @@ export default function InfoPage() {
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {data.features.ai_powered.map((feat) => (
-                    <AiFeatureCard key={feat.name} feat={feat} />
-                  ))}
+                  {data.features.ai_powered
+                    .filter((f) => !ADVANCED_AI_NAMES.has(f.name))
+                    .map((feat) => (
+                      <AiFeatureCard key={feat.name} feat={feat} />
+                    ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Advanced AI Tab ── */}
+            {activeTab === "advanced_ai" && (
+              <>
+                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <p className="text-sm text-amber-700 flex items-center gap-2">
+                    🧠 Advanced AI features powered by pgvector embeddings,
+                    taste profiling, and vector similarity — the intelligence
+                    layer behind smart recommendations and discovery.
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {data.features.ai_powered
+                    .filter((f) => ADVANCED_AI_NAMES.has(f.name))
+                    .map((feat) => (
+                      <AiFeatureCard key={feat.name} feat={feat} />
+                    ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Reader Tab ── */}
+            {activeTab === "reader" && (
+              <>
+                <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200">
+                  <p className="text-sm text-blue-700 flex items-center gap-2">
+                    📖 Follow this guide to get the most out of Aspire Library
+                    as a Reader — from browsing the catalog to discovering your
+                    next favorite book with AI.
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {data.walkthrough.reader_flow.map((step, i) => {
+                    const text = step.replace(/^\d+\.\s*/, "");
+                    return (
+                      <div
+                        key={i}
+                        className="bg-white border border-gray-200 rounded-lg transition-all hover:shadow-md"
+                      >
+                        <div className="px-4 pt-4 pb-3">
+                          <div className="flex items-center gap-3">
+                            <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold shrink-0">
+                              {i + 1}
+                            </span>
+                            <p className="text-sm text-gray-700">{text}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-6 grid gap-3 md:grid-cols-3">
+                  <Link
+                    href="/books"
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-indigo-50 border border-indigo-200 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition"
+                  >
+                    📚 Browse Catalog
+                  </Link>
+                  <Link
+                    href="/reader/discover"
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-purple-50 border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-100 transition"
+                  >
+                    🔍 AI Discovery
+                  </Link>
+                  <Link
+                    href="/reader/history"
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-100 transition"
+                  >
+                    📋 Borrow History
+                  </Link>
                 </div>
               </>
             )}
@@ -439,8 +535,8 @@ export default function InfoPage() {
             {/* ── Librarian Tools Tab ── */}
             {activeTab === "librarian" && (
               <>
-                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
-                  <p className="text-sm text-amber-700 flex items-center gap-2">
+                <div className="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-200">
+                  <p className="text-sm text-teal-700 flex items-center gap-2">
                     🔧 Tools available to users with the Librarian role for
                     managing the catalog, readers, and checkout approvals.
                   </p>
@@ -454,6 +550,23 @@ export default function InfoPage() {
                       badgeVariant="default"
                     />
                   ))}
+                </div>
+
+                {/* Librarian Walkthrough */}
+                <div className="mt-6">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-purple-100 text-purple-700 text-xs font-bold">
+                      L
+                    </span>
+                    Librarian Walkthrough
+                  </h3>
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <ol className="list-decimal list-inside space-y-1.5 text-sm text-gray-600">
+                      {data.walkthrough.librarian_flow.map((s, i) => (
+                        <li key={i}>{s.replace(/^\d+\.\s*/, "")}</li>
+                      ))}
+                    </ol>
+                  </div>
                 </div>
               </>
             )}
@@ -614,42 +727,7 @@ export default function InfoPage() {
                   </div>
                 </section>
 
-                {/* Walkthrough */}
-                <section>
-                  <h2 className="text-lg font-bold text-gray-900 mb-3">
-                    Feature Walkthrough
-                  </h2>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Reader Flow */}
-                    <div className="bg-white border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                          R
-                        </span>
-                        Reader Flow
-                      </h3>
-                      <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
-                        {data.walkthrough.reader_flow.map((s, i) => (
-                          <li key={i}>{s.replace(/^\d+\.\s*/, "")}</li>
-                        ))}
-                      </ol>
-                    </div>
-                    {/* Librarian Flow */}
-                    <div className="bg-white border border-gray-200 rounded-lg p-4">
-                      <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-purple-100 text-purple-700 text-xs font-bold">
-                          L
-                        </span>
-                        Librarian Flow
-                      </h3>
-                      <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
-                        {data.walkthrough.librarian_flow.map((s, i) => (
-                          <li key={i}>{s.replace(/^\d+\.\s*/, "")}</li>
-                        ))}
-                      </ol>
-                    </div>
-                  </div>
-                </section>
+
               </div>
             )}
           </div>
