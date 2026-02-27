@@ -16,3 +16,6 @@ frontend/.env.local
 *.swp
 *.swo
 .DS_Store
+
+# MCP Configuration
+.mcp.json
