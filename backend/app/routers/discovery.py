@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/books", tags=["discovery"])
 
 
 @router.post("/discover", response_model=DiscoveryResponse)
-async def discover_books_endpoint(
+def discover_books_endpoint(
     request: DiscoveryRequest,
     current_user: dict = Depends(get_current_user),
 ):

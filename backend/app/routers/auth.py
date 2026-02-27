@@ -9,13 +9,13 @@ security = HTTPBearer()
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: dict = Depends(get_current_user)):
+def get_me(current_user: dict = Depends(get_current_user)):
     """Return the current authenticated user's profile."""
     return current_user
 
 
 @router.post("/setup", response_model=UserResponse)
-async def setup_user(
+def setup_user(
     body: UserSetupInput,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):

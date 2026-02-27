@@ -1,4 +1,7 @@
 from typing import Annotated
+from contextlib import asynccontextmanager
+import asyncio
+import logging
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +10,7 @@ from app.core.config import get_settings
 from app.routers import books, search, auth, borrow, librarian, smart_search, discovery, book_requests
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 APP_NAME = "Aspire Library"
 APP_VERSION = "1.0.0"
@@ -15,10 +19,37 @@ APP_DESCRIPTION = (
     "AI-powered search, natural-language book discovery, and personalized recommendations."
 )
 
+
+async def _overdue_checker():
+    """Background task: mark overdue records every 60 seconds."""
+    from app.services.overdue import mark_overdue_records
+    while True:
+        try:
+            count = mark_overdue_records()
+            if count:
+                logger.info("Marked %d record(s) as overdue", count)
+        except Exception as exc:
+            logger.warning("Overdue checker error: %s", exc)
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle — runs the overdue checker in the background."""
+    task = asyncio.create_task(_overdue_checker())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
 app = FastAPI(
     title=APP_NAME,
     description=APP_DESCRIPTION,
     version=APP_VERSION,
+    lifespan=lifespan,
 )
 
 # CORS — settings.frontend_url can be a single URL or comma-separated list
@@ -29,6 +60,7 @@ if "http://localhost:3000" not in _origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

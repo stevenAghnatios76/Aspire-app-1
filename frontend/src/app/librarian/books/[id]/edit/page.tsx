@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
-import { api, type BookUpdateInput } from "@/lib/api";
+import { useAuthSWR } from "@/lib/swr";
+import { api, type Book, type BookUpdateInput } from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -10,9 +11,11 @@ export default function EditBookPage() {
   const { id } = useParams<{ id: string }>();
   const { getToken } = useAuth();
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // SWR fetches the book — shares cache with the detail page
+  const { data: bookData, isLoading } = useAuthSWR<Book>(`/api/books/${id}`);
 
   const [form, setForm] = useState<BookUpdateInput>({
     title: "",
@@ -27,32 +30,23 @@ export default function EditBookPage() {
     status: "available",
   });
 
+  // Populate form once SWR data arrives
   useEffect(() => {
-    async function fetchBook() {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        const book = await api.getBook(token, id);
-        setForm({
-          title: book.title,
-          author: book.author,
-          isbn: book.isbn || "",
-          genre: book.genre || "",
-          description: book.description || "",
-          cover_url: book.cover_url || "",
-          published_year: book.published_year || undefined,
-          total_copies: book.total_copies,
-          available_copies: book.available_copies,
-          status: book.status,
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load book");
-      } finally {
-        setIsLoading(false);
-      }
+    if (bookData) {
+      setForm({
+        title: bookData.title,
+        author: bookData.author,
+        isbn: bookData.isbn || "",
+        genre: bookData.genre || "",
+        description: bookData.description || "",
+        cover_url: bookData.cover_url || "",
+        published_year: bookData.published_year || undefined,
+        total_copies: bookData.total_copies,
+        available_copies: bookData.available_copies,
+        status: bookData.status,
+      });
     }
-    fetchBook();
-  }, [id, getToken]);
+  }, [bookData]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>

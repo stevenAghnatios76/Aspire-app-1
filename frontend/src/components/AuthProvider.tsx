@@ -7,6 +7,7 @@ import {
   useState,
   useCallback,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -39,10 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const supabase = createClient();
+  // Keep a ref to the current session so getToken() can read it synchronously
+  const sessionRef = useRef<Session | null>(null);
+  // Track which user ID we last fetched profile for to avoid duplicates
+  const lastFetchedUidRef = useRef<string | null>(null);
+
+  const supabase = useMemo(() => createClient(), []);
 
   const fetchProfile = useCallback(
     async (userId: string) => {
+      // Skip if we already fetched for this user (guards against double-fire)
+      if (lastFetchedUidRef.current === userId) return;
+      lastFetchedUidRef.current = userId;
       const { data } = await supabase
         .from("users")
         .select("*")
@@ -54,25 +63,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        fetchProfile(s.user.id);
-      }
-      setIsLoading(false);
-    });
-
-    // Listen for auth changes
+    // Use ONLY onAuthStateChange — it fires INITIAL_SESSION immediately,
+    // so there's no need for a separate getSession() call.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
+      sessionRef.current = s;
       setSession(s);
       setUser(s?.user ?? null);
+
       if (s?.user) {
+        // On TOKEN_REFRESHED (tab refocus), the uid hasn't changed — skip re-fetch
+        if (event === "TOKEN_REFRESHED" && lastFetchedUidRef.current === s.user.id) {
+          return;
+        }
         fetchProfile(s.user.id);
       } else {
+        lastFetchedUidRef.current = null;
         setProfile(null);
       }
       setIsLoading(false);
@@ -96,17 +103,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    lastFetchedUidRef.current = null;
     setUser(null);
     setProfile(null);
     setSession(null);
+    sessionRef.current = null;
   }, [supabase]);
 
+  // Return cached session token — no extra getSession() round trip
   const getToken = useCallback(async (): Promise<string | null> => {
-    const {
-      data: { session: s },
-    } = await supabase.auth.getSession();
-    return s?.access_token ?? null;
-  }, [supabase]);
+    return sessionRef.current?.access_token ?? null;
+  }, []);
 
   const value = useMemo(
     () => ({

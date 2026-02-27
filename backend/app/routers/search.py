@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/books", tags=["search"])
 
 
 @router.get("/search", response_model=PaginatedBooks)
-async def search_books(
+def search_books(
     q: str = Query("", description="Search query across title, author, genre, ISBN"),
     genre: str = Query("", description="Filter by genre"),
     status: str = Query("", description="Filter by status: available, checked_out, unavailable"),
@@ -18,24 +18,29 @@ async def search_books(
 ):
     """
     Search books by title, author, genre, ISBN with optional filters.
+    Uses PostgreSQL full-text search (GIN indexes) for title/author,
+    and falls back to ILIKE for genre/ISBN.
     """
     supabase = get_supabase_admin()
     offset = (page - 1) * limit
 
-    # Build base query for count
+    # Build base queries
     count_query = supabase.table("books").select("id", count="exact")
     data_query = supabase.table("books").select("*")
 
-    # Apply search filter (ILIKE across multiple columns)
+    # Apply search filter — use full-text search for title+author (GIN indexed),
+    # keep ILIKE for genre/ISBN (B-tree indexed)
     if q:
-        search_filter = (
-            f"title.ilike.%{q}%,"
-            f"author.ilike.%{q}%,"
+        # Convert search query to tsquery format: "word1 & word2" for multi-word
+        ts_terms = " & ".join(q.strip().split())
+        fts_filter = (
+            f"title.fts.{ts_terms},"
+            f"author.fts.{ts_terms},"
             f"genre.ilike.%{q}%,"
             f"isbn.ilike.%{q}%"
         )
-        count_query = count_query.or_(search_filter)
-        data_query = data_query.or_(search_filter)
+        count_query = count_query.or_(fts_filter)
+        data_query = data_query.or_(fts_filter)
 
     # Apply genre filter
     if genre:

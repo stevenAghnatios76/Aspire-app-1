@@ -7,7 +7,7 @@ router = APIRouter(prefix="/api/books", tags=["smart-search"])
 
 
 @router.get("/smart-search", response_model=PaginatedBooks)
-async def smart_search_books(
+def smart_search_books(
     q: str = Query("", description="Natural language search query"),
     genre: str = Query("", description="Genre filter"),
     status: str = Query("", description="Status filter"),

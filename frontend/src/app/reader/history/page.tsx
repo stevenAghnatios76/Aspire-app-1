@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { useAuthSWR } from "@/lib/swr";
 import { api, type BorrowHistoryItem } from "@/lib/api";
 import Link from "next/link";
+import Image from "next/image";
 
 const statusStyles: Record<string, string> = {
   pending: "bg-blue-100 text-blue-700",
@@ -23,35 +25,19 @@ function formatDate(iso: string) {
 
 export default function ReaderHistoryPage() {
   const { getToken } = useAuth();
-  const [history, setHistory] = useState<BorrowHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [returningId, setReturningId] = useState<string | null>(null);
 
-  const fetchHistory = useCallback(async () => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const data = await api.getMyHistory(token);
-      setHistory(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load history");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getToken]);
-
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
-
-  // Poll every 10s so librarian approvals appear live
-  const fetchHistoryRef = useRef(fetchHistory);
-  fetchHistoryRef.current = fetchHistory;
-  useEffect(() => {
-    const id = setInterval(() => fetchHistoryRef.current(), 10_000);
-    return () => clearInterval(id);
-  }, []);
+  // SWR with auto-refresh every 10s — stops when tab is hidden (refreshWhenHidden: false)
+  const {
+    data: history,
+    error,
+    isLoading,
+    mutate,
+  } = useAuthSWR<BorrowHistoryItem[]>("/api/borrow/history", {
+    refreshInterval: 10_000,
+    refreshWhenHidden: false,    // stops polling when tab is backgrounded
+    refreshWhenOffline: false,   // stops polling when offline
+  });
 
   const handleReturn = async (recordId: string) => {
     setReturningId(recordId);
@@ -59,9 +45,10 @@ export default function ReaderHistoryPage() {
       const token = await getToken();
       if (!token) return;
       await api.returnBook(token, recordId);
-      await fetchHistory();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to return book");
+      // Revalidate the cache
+      mutate();
+    } catch {
+      // error handled by SWR on next fetch
     } finally {
       setReturningId(null);
     }
@@ -81,13 +68,13 @@ export default function ReaderHistoryPage() {
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-          {error}
+          {error.message}
         </div>
       )}
 
-      {history.length === 0 ? (
+      {(!history || history.length === 0) && !isLoading ? (
         <p className="text-gray-500 italic">You haven&apos;t borrowed any books yet.</p>
-      ) : (
+      ) : history && history.length > 0 ? (
         <div className="space-y-4">
           {history.map((record) => (
             <div
@@ -97,9 +84,11 @@ export default function ReaderHistoryPage() {
               {/* Cover thumbnail */}
               <div className="w-14 h-20 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
                 {record.book?.cover_url ? (
-                  <img
+                  <Image
                     src={record.book.cover_url}
                     alt={record.book.title}
+                    width={56}
+                    height={80}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -154,7 +143,7 @@ export default function ReaderHistoryPage() {
             </div>
           ))}
         </div>
-      )}
+      ) : null}
 
       <div className="mt-8">
         <Link href="/books" className="text-indigo-600 hover:underline text-sm">

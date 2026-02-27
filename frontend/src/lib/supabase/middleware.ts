@@ -47,35 +47,9 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Profile-based guards for authenticated users on protected paths
-  if (user && isProtectedPath) {
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    // No profile → force onboarding (unless already there)
-    if (!profile && request.nextUrl.pathname !== "/onboarding") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/onboarding";
-      return NextResponse.redirect(url);
-    }
-
-    // Has profile → skip onboarding if they land there
-    if (profile && request.nextUrl.pathname === "/onboarding") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/books";
-      return NextResponse.redirect(url);
-    }
-
-    // Librarian route guard
-    if (request.nextUrl.pathname.startsWith("/librarian") && profile?.role !== "librarian") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/books";
-      return NextResponse.redirect(url);
-    }
-  }
+  // Role-based guards are enforced client-side via AuthProvider (profile.role).
+  // The middleware only ensures the user is authenticated — this removes
+  // the extra DB round-trip that was querying the users table on every navigation.
 
   return supabaseResponse;
 }

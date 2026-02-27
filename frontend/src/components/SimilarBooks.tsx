@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { api, type SimilarBook } from "@/lib/api";
+import { useAuthSWR } from "@/lib/swr";
+import { type SimilarBook } from "@/lib/api";
 import Link from "next/link";
+import Image from "next/image";
 
 interface SimilarBooksProps {
   bookId: string;
@@ -20,26 +20,9 @@ function SkeletonCard() {
 }
 
 export default function SimilarBooks({ bookId }: SimilarBooksProps) {
-  const { getToken } = useAuth();
-  const [books, setBooks] = useState<SimilarBook[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        const data = await api.getSimilarBooks(token, bookId);
-        setBooks(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load similar books");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    load();
-  }, [bookId, getToken]);
+  const { data: books, error, isLoading } = useAuthSWR<SimilarBook[]>(
+    `/api/books/${bookId}/similar`
+  );
 
   if (isLoading) {
     return (
@@ -63,7 +46,7 @@ export default function SimilarBooks({ bookId }: SimilarBooksProps) {
     );
   }
 
-  if (books.length === 0) {
+  if (!books || books.length === 0) {
     return (
       <div className="mt-12 pt-8 border-t border-gray-200">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">You might also like</h2>
@@ -82,12 +65,14 @@ export default function SimilarBooks({ bookId }: SimilarBooksProps) {
             href={`/books/${book.id}`}
             className="flex-shrink-0 w-40 group"
           >
-            <div className="aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden mb-2 flex items-center justify-center">
+            <div className="aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden mb-2 flex items-center justify-center relative">
               {book.cover_url ? (
-                <img
+                <Image
                   src={book.cover_url}
                   alt={book.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  fill
+                  className="object-cover group-hover:scale-105 transition-transform"
+                  sizes="160px"
                 />
               ) : (
                 <span className="text-4xl">📖</span>

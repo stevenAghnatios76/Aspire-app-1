@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/books", tags=["books"])
 
 
 @router.get("", response_model=PaginatedBooks)
-async def list_books(
+def list_books(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     current_user: dict = Depends(get_current_user),
@@ -54,7 +54,7 @@ async def list_books(
 
 
 @router.get("/{book_id}", response_model=BookResponse)
-async def get_book(
+def get_book(
     book_id: str,
     current_user: dict = Depends(get_current_user),
 ):
@@ -72,7 +72,7 @@ async def get_book(
 
 
 @router.get("/{book_id}/summary", response_model=BookSummaryResponse)
-async def get_book_summary(
+def get_book_summary(
     book_id: str,
     current_user: dict = Depends(get_current_user),
 ):
@@ -82,7 +82,7 @@ async def get_book_summary(
 
 
 @router.get("/{book_id}/similar", response_model=list[SimilarBook])
-async def get_similar_books(
+def get_similar_books(
     book_id: str,
     current_user: dict = Depends(get_current_user),
 ):
@@ -131,7 +131,7 @@ async def get_similar_books(
 
 
 @router.post("", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
-async def create_book(
+def create_book(
     book: BookCreate,
     current_user: dict = Depends(require_librarian),
 ):
@@ -167,7 +167,7 @@ async def create_book(
 
 
 @router.put("/{book_id}", response_model=BookResponse)
-async def update_book(
+def update_book(
     book_id: str,
     book: BookUpdate,
     current_user: dict = Depends(require_librarian),
@@ -217,7 +217,7 @@ async def update_book(
 
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_book(
+def delete_book(
     book_id: str,
     current_user: dict = Depends(require_librarian),
 ):
@@ -237,7 +237,7 @@ async def delete_book(
 
 
 @router.post("/generate-embeddings")
-async def generate_embeddings_endpoint(
+def generate_embeddings_endpoint(
     current_user: dict = Depends(require_librarian),
 ):
     """Generate embeddings for all books that don't have one yet (librarian only)."""
@@ -276,7 +276,7 @@ def _parse_csv_row(row: dict, row_num: int) -> tuple[dict | None, dict | None]:
 
 
 @router.post("/import-csv")
-async def import_books_csv(
+def import_books_csv(
     file: UploadFile = File(...),
     current_user: dict = Depends(require_librarian),
 ):
@@ -287,7 +287,7 @@ async def import_books_csv(
             detail="File must be a .csv file",
         )
 
-    contents = await file.read()
+    contents = file.file.read()
     try:
         text = contents.decode("utf-8")
     except UnicodeDecodeError:

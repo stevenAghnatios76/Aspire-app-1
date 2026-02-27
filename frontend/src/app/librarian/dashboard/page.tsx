@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { useAuthSWR } from "@/lib/swr";
 import {
   api,
   type DashboardStats,
@@ -45,51 +46,26 @@ function StatCard({ label, value, colorClass }: StatCardProps) {
 
 export default function LibrarianDashboardPage() {
   const { getToken } = useAuth();
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [overdue, setOverdue] = useState<OverdueBorrowRecord[]>([]);
-  const [readers, setReaders] = useState<ReaderWithBorrowCount[]>([]);
-  const [pendingReturns, setPendingReturns] = useState<PendingReturnRecord[]>([]);
+
+  // SWR: each data section has its own cache key — actions revalidate only what changed
+  const { data: stats, mutate: mutateStats } = useAuthSWR<DashboardStats>("/api/librarian/dashboard");
+  const { data: overdue } = useAuthSWR<OverdueBorrowRecord[]>("/api/borrow/overdue");
+  const { data: readers } = useAuthSWR<ReaderWithBorrowCount[]>("/api/librarian/readers");
+  const { data: pendingReturns, mutate: mutatePendingReturns } = useAuthSWR<PendingReturnRecord[]>("/api/librarian/pending-returns");
+  const { data: pendingCheckouts, mutate: mutatePendingCheckouts } = useAuthSWR<PendingReturnRecord[]>("/api/librarian/pending-checkouts");
+  const { data: bookRequests, mutate: mutateBookRequests } = useAuthSWR<BookRequest[]>("/api/librarian/book-requests?status=pending");
+
+  const isLoading = !stats;
+
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [embeddingResult, setEmbeddingResult] = useState<EmbeddingGenerationResult | null>(null);
   const [isGeneratingEmbeddings, setIsGeneratingEmbeddings] = useState(false);
   const [csvResult, setCsvResult] = useState<CSVImportResult | null>(null);
   const [isImportingCSV, setIsImportingCSV] = useState(false);
-  const [pendingCheckouts, setPendingCheckouts] = useState<PendingReturnRecord[]>([]);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [bookRequests, setBookRequests] = useState<BookRequest[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState<Record<string, string>>({});
-
-  const loadDashboard = useCallback(async () => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const [dashData, overdueData, readersData, pendingData, pendingCheckoutsData, bookRequestsData] = await Promise.all([
-        api.getDashboard(token),
-        api.getOverdueRecords(token),
-        api.getReaders(token),
-        api.getPendingReturns(token),
-        api.getPendingCheckouts(token),
-        api.getLibrarianBookRequests(token, "pending"),
-      ]);
-      setStats(dashData);
-      setOverdue(overdueData);
-      setReaders(readersData);
-      setPendingReturns(pendingData);
-      setPendingCheckouts(pendingCheckoutsData);
-      setBookRequests(bookRequestsData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getToken]);
-
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
 
   if (isLoading) {
     return (
@@ -174,9 +150,8 @@ export default function LibrarianDashboardPage() {
                 if (!token) return;
                 const result = await api.importBooksCSV(token, file);
                 setCsvResult(result);
-                // Refresh dashboard stats
-                const refreshed = await api.getDashboard(token);
-                setStats(refreshed);
+                // Revalidate dashboard stats via SWR
+                mutateStats();
               } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to import CSV");
               } finally {
@@ -208,11 +183,11 @@ export default function LibrarianDashboardPage() {
       {/* Pending Returns */}
       <section className="mb-10">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Pending Returns</h2>
-        {pendingReturns.length === 0 ? (
+        {(pendingReturns ?? []).length === 0 ? (
           <p className="text-gray-500 italic text-sm">No pending return requests.</p>
         ) : (
           <div className="space-y-3">
-            {pendingReturns.map((record) => (
+            {(pendingReturns ?? []).map((record) => (
               <div
                 key={record.id}
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl"
@@ -241,9 +216,9 @@ export default function LibrarianDashboardPage() {
                       const token = await getToken();
                       if (!token) return;
                       await api.approveReturn(token, record.id);
-                      setPendingReturns((prev) => prev.filter((r) => r.id !== record.id));
-                      const refreshedStats = await api.getDashboard(token);
-                      setStats(refreshedStats);
+                      // Optimistically remove from list & revalidate stats
+                      mutatePendingReturns((prev) => prev?.filter((r) => r.id !== record.id), false);
+                      mutateStats();
                     } catch (err) {
                       setError(err instanceof Error ? err.message : "Failed to approve return");
                     } finally {
@@ -264,11 +239,11 @@ export default function LibrarianDashboardPage() {
       {/* Book Requests */}
       <section className="mb-10">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Pending Book Requests</h2>
-        {bookRequests.length === 0 ? (
+        {(bookRequests ?? []).length === 0 ? (
           <p className="text-gray-500 italic text-sm">No pending book requests.</p>
         ) : (
           <div className="space-y-3">
-            {bookRequests.map((req) => (
+            {(bookRequests ?? []).map((req) => (
               <div
                 key={req.id}
                 className="flex flex-col gap-3 p-4 bg-purple-50 border border-purple-200 rounded-xl"
@@ -308,9 +283,8 @@ export default function LibrarianDashboardPage() {
                           "approve",
                           reviewNote[req.id] || undefined
                         );
-                        setBookRequests((prev) => prev.filter((r) => r.id !== req.id));
-                        const refreshedStats = await api.getDashboard(token);
-                        setStats(refreshedStats);
+                        mutateBookRequests((prev) => prev?.filter((r) => r.id !== req.id), false);
+                        mutateStats();
                       } catch (err) {
                         setError(err instanceof Error ? err.message : "Failed to approve request");
                       } finally {
@@ -334,9 +308,8 @@ export default function LibrarianDashboardPage() {
                           "reject",
                           reviewNote[req.id] || undefined
                         );
-                        setBookRequests((prev) => prev.filter((r) => r.id !== req.id));
-                        const refreshedStats = await api.getDashboard(token);
-                        setStats(refreshedStats);
+                        mutateBookRequests((prev) => prev?.filter((r) => r.id !== req.id), false);
+                        mutateStats();
                       } catch (err) {
                         setError(err instanceof Error ? err.message : "Failed to reject request");
                       } finally {
@@ -358,11 +331,11 @@ export default function LibrarianDashboardPage() {
       {/* Pending Checkouts */}
       <section className="mb-10">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Pending Checkouts</h2>
-        {pendingCheckouts.length === 0 ? (
+        {(pendingCheckouts ?? []).length === 0 ? (
           <p className="text-gray-500 italic text-sm">No pending checkout requests.</p>
         ) : (
           <div className="space-y-3">
-            {pendingCheckouts.map((record) => (
+            {(pendingCheckouts ?? []).map((record) => (
               <div
                 key={record.id}
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl"
@@ -392,9 +365,8 @@ export default function LibrarianDashboardPage() {
                         const token = await getToken();
                         if (!token) return;
                         await api.approveCheckout(token, record.id);
-                        setPendingCheckouts((prev) => prev.filter((r) => r.id !== record.id));
-                        const refreshedStats = await api.getDashboard(token);
-                        setStats(refreshedStats);
+                        mutatePendingCheckouts((prev) => prev?.filter((r) => r.id !== record.id), false);
+                        mutateStats();
                       } catch (err) {
                         setError(err instanceof Error ? err.message : "Failed to approve checkout");
                       } finally {
@@ -413,7 +385,7 @@ export default function LibrarianDashboardPage() {
                         const token = await getToken();
                         if (!token) return;
                         await api.rejectCheckout(token, record.id);
-                        setPendingCheckouts((prev) => prev.filter((r) => r.id !== record.id));
+                        mutatePendingCheckouts((prev) => prev?.filter((r) => r.id !== record.id), false);
                       } catch (err) {
                         setError(err instanceof Error ? err.message : "Failed to reject checkout");
                       } finally {
@@ -435,11 +407,11 @@ export default function LibrarianDashboardPage() {
       {/* Overdue records */}
       <section className="mb-10">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Overdue Books</h2>
-        {overdue.length === 0 ? (
+        {(overdue ?? []).length === 0 ? (
           <p className="text-gray-500 italic text-sm">No overdue records.</p>
         ) : (
           <div className="space-y-3">
-            {overdue.map((record) => (
+            {(overdue ?? []).map((record) => (
               <div
                 key={record.id}
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-red-50 border border-red-200 rounded-xl"
@@ -471,7 +443,7 @@ export default function LibrarianDashboardPage() {
       {/* Readers table */}
       <section>
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Readers</h2>
-        {readers.length === 0 ? (
+        {(readers ?? []).length === 0 ? (
           <p className="text-gray-500 italic text-sm">No readers registered.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -485,7 +457,7 @@ export default function LibrarianDashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {readers.map((reader) => (
+                {(readers ?? []).map((reader) => (
                   <tr key={reader.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 pr-4">
                       <p className="font-medium text-gray-900">{reader.name ?? "—"}</p>

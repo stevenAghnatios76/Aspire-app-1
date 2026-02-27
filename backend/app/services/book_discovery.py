@@ -208,51 +208,63 @@ def rank_and_curate(paragraph: str, raw_books: list[dict]) -> list[dict]:
 
 
 def cross_reference_catalog(books: list[dict]) -> list[dict]:
-    """Check each discovered book against the library catalog."""
+    """Check discovered books against the library catalog using batch queries."""
     supabase = get_supabase_admin()
-    result = []
 
+    # Initialize all books with defaults
     for book in books:
         book["in_catalog"] = False
         book["catalog_book_id"] = None
         book["available_copies"] = None
 
-        # Try ISBN match first
-        if book.get("isbn"):
-            isbn_result = (
-                supabase.table("books")
-                .select("id, available_copies")
-                .eq("isbn", book["isbn"])
-                .maybe_single()
-                .execute()
-            )
-            if isbn_result and isbn_result.data:
-                book["in_catalog"] = True
-                book["catalog_book_id"] = isbn_result.data["id"]
-                book["available_copies"] = isbn_result.data["available_copies"]
-                result.append(book)
-                continue
+    # Batch 1: ISBN lookup — one query for all ISBNs
+    isbns = [b["isbn"] for b in books if b.get("isbn")]
+    isbn_map: dict[str, dict] = {}
+    if isbns:
+        isbn_result = (
+            supabase.table("books")
+            .select("id, isbn, available_copies")
+            .in_("isbn", isbns)
+            .execute()
+        )
+        for row in (isbn_result.data or []):
+            if row.get("isbn"):
+                isbn_map[row["isbn"]] = row
 
-        # Try title+author ILIKE match
+    # Apply ISBN matches
+    needs_title_match = []
+    for book in books:
+        isbn = book.get("isbn")
+        if isbn and isbn in isbn_map:
+            book["in_catalog"] = True
+            book["catalog_book_id"] = isbn_map[isbn]["id"]
+            book["available_copies"] = isbn_map[isbn]["available_copies"]
+        else:
+            needs_title_match.append(book)
+
+    # Batch 2: title+author ILIKE for remaining books (still individual queries
+    # since ILIKE fuzzy matching doesn't batch well, but skips ISBN-matched ones)
+    for book in needs_title_match:
         title = book.get("title", "")
         author = book.get("author", "")
         if title:
-            match_result = (
-                supabase.table("books")
-                .select("id, available_copies")
-                .ilike("title", f"%{title}%")
-                .ilike("author", f"%{author}%")
-                .maybe_single()
-                .execute()
-            )
-            if match_result and match_result.data:
-                book["in_catalog"] = True
-                book["catalog_book_id"] = match_result.data["id"]
-                book["available_copies"] = match_result.data["available_copies"]
+            try:
+                match_result = (
+                    supabase.table("books")
+                    .select("id, available_copies")
+                    .ilike("title", f"%{title}%")
+                    .ilike("author", f"%{author}%")
+                    .maybe_single()
+                    .execute()
+                )
+                if match_result and match_result.data:
+                    book["in_catalog"] = True
+                    book["catalog_book_id"] = match_result.data["id"]
+                    book["available_copies"] = match_result.data["available_copies"]
+            except Exception:
+                pass
 
-        result.append(book)
-
-    return result
+    return books
 
 
 def discover_books(paragraph: str) -> dict:

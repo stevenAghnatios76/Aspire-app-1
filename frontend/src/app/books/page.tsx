@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { api, type Book, type PaginatedBooks } from "@/lib/api";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function BooksPage() {
   const { getToken, isLibrarian } = useAuth();
@@ -207,10 +208,12 @@ export default function BooksPage() {
                   <Link href={`/books/${book.id}`}>
                     <div className="aspect-[3/4] bg-gray-100 flex items-center justify-center relative">
                       {book.cover_url ? (
-                        <img
+                        <Image
                           src={book.cover_url}
                           alt={book.title}
-                          className="w-full h-full object-cover"
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, 25vw"
                         />
                       ) : (
                         <span className="text-4xl">📖</span>

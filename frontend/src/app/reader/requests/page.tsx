@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { api, type BookRequest } from "@/lib/api";
+import { useAuthSWR } from "@/lib/swr";
+import { type BookRequest } from "@/lib/api";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -20,27 +19,11 @@ const statusStyles: Record<string, string> = {
 };
 
 export default function MyRequestsPage() {
-  const { getToken } = useAuth();
-  const [requests, setRequests] = useState<BookRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadRequests = useCallback(async () => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const data = await api.getMyBookRequests(token);
-      setRequests(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load requests");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getToken]);
-
-  useEffect(() => {
-    loadRequests();
-  }, [loadRequests]);
+  const {
+    data: requests,
+    error,
+    isLoading,
+  } = useAuthSWR<BookRequest[]>("/api/book-requests");
 
   if (isLoading) {
     return (
@@ -56,11 +39,11 @@ export default function MyRequestsPage() {
 
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm mb-6">
-          {error}
+          {error.message}
         </div>
       )}
 
-      {requests.length === 0 ? (
+      {!requests || requests.length === 0 ? (
         <p className="text-gray-500 text-center py-12">
           You haven&apos;t made any book requests yet.
         </p>

@@ -283,6 +283,9 @@ export const api = {
   getMyHistory: (token: string) =>
     apiFetch<BorrowHistoryItem[]>("/api/borrow/history", { token }),
 
+  getActiveBorrow: (token: string, bookId: string) =>
+    apiFetch<BorrowRecord | null>(`/api/borrow/active?book_id=${bookId}`, { token }),
+
   getOverdueRecords: (token: string) =>
     apiFetch<OverdueBorrowRecord[]>("/api/borrow/overdue", { token }),
 

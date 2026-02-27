@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/book-requests", tags=["book-requests"])
 
 
 @router.post("", response_model=BookRequestOut, status_code=status.HTTP_201_CREATED)
-async def create_book_request(
+def create_book_request(
     request: BookRequestCreate,
     current_user: dict = Depends(get_current_user),
 ):
@@ -49,7 +49,7 @@ async def create_book_request(
 
 
 @router.get("", response_model=List[BookRequestOut])
-async def get_my_book_requests(
+def get_my_book_requests(
     current_user: dict = Depends(get_current_user),
 ):
     """Get current user's book requests."""

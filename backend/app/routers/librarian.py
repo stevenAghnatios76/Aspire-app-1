@@ -10,7 +10,6 @@ from app.schemas.borrow import (
     BorrowRecordResponse,
 )
 from app.schemas.book_request import BookRequestOut, BookRequestReview
-from app.services.overdue import mark_overdue_records
 from app.services.recommendations import get_reader_recommendations
 from app.schemas.recommendation import RecommendationResponse
 from collections import defaultdict
@@ -22,68 +21,28 @@ router = APIRouter(prefix="/api/librarian", tags=["librarian"])
 
 
 @router.get("/dashboard", response_model=DashboardStats)
-async def get_dashboard(
+def get_dashboard(
     current_user: dict = Depends(require_librarian),
 ):
-    """Get dashboard statistics (librarian only)."""
-    mark_overdue_records()
+    """Get dashboard statistics (librarian only). Uses a single SQL RPC."""
     supabase = get_supabase_admin()
 
-    total_books_result = supabase.table("books").select("id", count="exact").execute()
-    total_books = total_books_result.count or 0
-
-    checked_out_result = (
-        supabase.table("borrow_records")
-        .select("id", count="exact")
-        .in_("status", ["active", "overdue", "pending_return"])
-        .execute()
-    )
-    total_checked_out = checked_out_result.count or 0
-
-    overdue_result = (
-        supabase.table("borrow_records")
-        .select("id", count="exact")
-        .eq("status", "overdue")
-        .execute()
-    )
-    total_overdue = overdue_result.count or 0
-
-    pending_returns_result = (
-        supabase.table("borrow_records")
-        .select("id", count="exact")
-        .eq("status", "pending_return")
-        .execute()
-    )
-    total_pending_returns = pending_returns_result.count or 0
-
-    readers_result = (
-        supabase.table("users")
-        .select("id", count="exact")
-        .eq("role", "reader")
-        .execute()
-    )
-    total_readers = readers_result.count or 0
-
-    pending_requests_result = (
-        supabase.table("book_requests")
-        .select("id", count="exact")
-        .eq("status", "pending")
-        .execute()
-    )
-    total_pending_requests = pending_requests_result.count or 0
+    # Single round trip instead of 6 sequential count queries
+    result = supabase.rpc("get_dashboard_stats").execute()
+    data = result.data if result.data else {}
 
     return DashboardStats(
-        total_books=total_books,
-        total_checked_out=total_checked_out,
-        total_overdue=total_overdue,
-        total_readers=total_readers,
-        total_pending_returns=total_pending_returns,
-        total_pending_requests=total_pending_requests,
+        total_books=data.get("total_books", 0),
+        total_checked_out=data.get("total_checked_out", 0),
+        total_overdue=data.get("total_overdue", 0),
+        total_readers=data.get("total_readers", 0),
+        total_pending_returns=data.get("total_pending_returns", 0),
+        total_pending_requests=data.get("total_pending_requests", 0),
     )
 
 
 @router.get("/readers", response_model=List[ReaderWithBorrowCount])
-async def get_readers(
+def get_readers(
     current_user: dict = Depends(require_librarian),
 ):
     """Get all readers with their borrow counts (librarian only)."""
@@ -127,7 +86,7 @@ async def get_readers(
 
 
 @router.get("/readers/{user_id}", response_model=ReaderWithBorrowCount)
-async def get_reader(
+def get_reader(
     user_id: str,
     current_user: dict = Depends(require_librarian),
 ):
@@ -157,7 +116,7 @@ async def get_reader(
 
 
 @router.get("/readers/{user_id}/history", response_model=List[BorrowHistoryItem])
-async def get_reader_history(
+def get_reader_history(
     user_id: str,
     current_user: dict = Depends(require_librarian),
 ):
@@ -176,7 +135,7 @@ async def get_reader_history(
 
 
 @router.get("/pending-returns", response_model=List[PendingReturnRecord])
-async def get_pending_returns(
+def get_pending_returns(
     current_user: dict = Depends(require_librarian),
 ):
     """Get all borrow records with pending return requests (librarian only)."""
@@ -194,7 +153,7 @@ async def get_pending_returns(
 
 
 @router.post("/approve-return", response_model=BorrowRecordResponse)
-async def approve_return(
+def approve_return(
     request: ReturnRequest,
     current_user: dict = Depends(require_librarian),
 ):
@@ -249,7 +208,7 @@ async def approve_return(
 
 
 @router.get("/readers/{user_id}/recommendations", response_model=RecommendationResponse)
-async def get_reader_recommendations_endpoint(
+def get_reader_recommendations_endpoint(
     user_id: str,
     current_user: dict = Depends(require_librarian),
 ):
@@ -266,7 +225,7 @@ async def get_reader_recommendations_endpoint(
 
 
 @router.get("/pending-checkouts", response_model=List[PendingReturnRecord])
-async def get_pending_checkouts(
+def get_pending_checkouts(
     current_user: dict = Depends(require_librarian),
 ):
     """Get all borrow records awaiting checkout approval (librarian only)."""
@@ -282,7 +241,7 @@ async def get_pending_checkouts(
 
 
 @router.post("/borrow/{borrow_id}/approve", response_model=BorrowRecordResponse)
-async def approve_checkout(
+def approve_checkout(
     borrow_id: str,
     current_user: dict = Depends(require_librarian),
 ):
@@ -341,7 +300,7 @@ async def approve_checkout(
 
 
 @router.post("/borrow/{borrow_id}/reject", status_code=status.HTTP_204_NO_CONTENT)
-async def reject_checkout(
+def reject_checkout(
     borrow_id: str,
     current_user: dict = Depends(require_librarian),
 ):
@@ -366,7 +325,7 @@ async def reject_checkout(
 
 
 @router.post("/readers/{user_id}/send-recommendations")
-async def send_recommendations_email(
+def send_recommendations_email(
     user_id: str,
     current_user: dict = Depends(require_librarian),
 ):
@@ -407,7 +366,7 @@ async def send_recommendations_email(
 
 
 @router.get("/book-requests", response_model=List[BookRequestOut])
-async def get_book_requests(
+def get_book_requests(
     status_filter: Optional[str] = Query(None, alias="status"),
     current_user: dict = Depends(require_librarian),
 ):
@@ -433,7 +392,7 @@ async def get_book_requests(
 
 
 @router.post("/book-requests/{request_id}/review", response_model=BookRequestOut)
-async def review_book_request(
+def review_book_request(
     request_id: str,
     review: BookRequestReview,
     current_user: dict = Depends(require_librarian),

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { useAuthSWR } from "@/lib/swr";
 import { api, type Book, type BorrowRecord } from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import SimilarBooks from "@/components/SimilarBooks";
 import AIBookSummary from "@/components/AIBookSummary";
 
@@ -12,42 +14,23 @@ export default function BookDetailPage() {
 	const { id } = useParams<{ id: string }>();
 	const { getToken, isLibrarian } = useAuth();
 	const router = useRouter();
-	const [book, setBook] = useState<Book | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-	const [activeBorrow, setActiveBorrow] = useState<BorrowRecord | null>(null);
 	const [isBorrowing, setIsBorrowing] = useState(false);
 	const [borrowError, setBorrowError] = useState<string | null>(null);
 	const [borrowSuccess, setBorrowSuccess] = useState(false);
 
-	const fetchBook = useCallback(async () => {
-		try {
-			const token = await getToken();
-			if (!token) return;
-			const [data, history] = await Promise.all([
-				api.getBook(token, id),
-				api.getMyHistory(token),
-			]);
-			setBook(data);
-			const active = history.find(
-				(r) =>
-					r.book_id === id &&
-					(r.status === "pending" ||
-						r.status === "active" ||
-						r.status === "overdue" ||
-						r.status === "pending_return"),
-			);
-			setActiveBorrow(active ?? null);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load book");
-		} finally {
-			setIsLoading(false);
-		}
-	}, [id, getToken]);
+	// SWR: fetch book data (cached + deduplicated across navigations)
+	const {
+		data: book,
+		error,
+		isLoading,
+		mutate: mutateBook,
+	} = useAuthSWR<Book>(`/api/books/${id}`);
 
-	useEffect(() => {
-		fetchBook();
-	}, [fetchBook]);
+	// SWR: targeted active-borrow check instead of fetching full history
+	const {
+		data: activeBorrow,
+		mutate: mutateActiveBorrow,
+	} = useAuthSWR<BorrowRecord | null>(`/api/borrow/active?book_id=${id}`);
 
 	const handleBorrow = async () => {
 		setIsBorrowing(true);
@@ -57,10 +40,11 @@ export default function BookDetailPage() {
 			const token = await getToken();
 			if (!token) return;
 			const record = await api.borrowBook(token, id);
-			setActiveBorrow(record);
+			// Optimistically update the active borrow in cache
+			mutateActiveBorrow(record, false);
 			setBorrowSuccess(true);
-			const updated = await api.getBook(token, id);
-			setBook(updated);
+			// Revalidate the book data (available_copies may have changed)
+			mutateBook();
 		} catch (err) {
 			setBorrowError(
 				err instanceof Error ? err.message : "Failed to borrow book",
@@ -78,7 +62,7 @@ export default function BookDetailPage() {
 			await api.deleteBook(token, book.id);
 			router.push("/books");
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to delete book");
+			setBorrowError(err instanceof Error ? err.message : "Failed to delete book");
 		}
 	};
 
@@ -93,7 +77,7 @@ export default function BookDetailPage() {
 	if (error || !book) {
 		return (
 			<div className="max-w-4xl mx-auto px-6 py-12 text-center">
-				<p className="text-red-600">{error || "Book not found"}</p>
+				<p className="text-red-600">{error?.message || "Book not found"}</p>
 				<Link
 					href="/books"
 					className="text-indigo-600 hover:underline text-sm mt-4 inline-block"
@@ -122,12 +106,15 @@ export default function BookDetailPage() {
 			<div className="flex flex-col md:flex-row gap-8">
 				{/* Cover */}
 				<div className="w-full md:w-64 flex-shrink-0">
-					<div className="aspect-[3/4] bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center">
+					<div className="aspect-[3/4] bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center relative">
 						{book.cover_url ? (
-							<img
+							<Image
 								src={book.cover_url}
 								alt={book.title}
-								className="w-full h-full object-cover"
+								fill
+								className="object-cover"
+								priority
+								sizes="256px"
 							/>
 						) : (
 							<span className="text-6xl">📖</span>

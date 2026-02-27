@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useAuth } from "@/components/AuthProvider";
-import { api, type BorrowHistoryItem, type ReaderWithBorrowCount } from "@/lib/api";
+import { useAuthSWR } from "@/lib/swr";
+import { type BorrowHistoryItem, type ReaderWithBorrowCount } from "@/lib/api";
 import Link from "next/link";
+import Image from "next/image";
 import ReaderRecommendations from "@/components/ReaderRecommendations";
 
 const statusStyles: Record<string, string> = {
@@ -25,31 +25,17 @@ function formatDate(iso: string) {
 
 export default function ReaderHistoryPage() {
   const { id } = useParams<{ id: string }>();
-  const { getToken } = useAuth();
-  const [reader, setReader] = useState<ReaderWithBorrowCount | null>(null);
-  const [history, setHistory] = useState<BorrowHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        const [readerData, historyData] = await Promise.all([
-          api.getReader(token, id),
-          api.getReaderHistory(token, id),
-        ]);
-        setReader(readerData);
-        setHistory(historyData);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load reader history");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    load();
-  }, [id, getToken]);
+  // SWR: both requests are cached and deduplicated
+  const { data: reader, error: readerError, isLoading: readerLoading } = useAuthSWR<ReaderWithBorrowCount>(
+    `/api/librarian/readers/${id}`
+  );
+  const { data: history, error: historyError, isLoading: historyLoading } = useAuthSWR<BorrowHistoryItem[]>(
+    `/api/librarian/readers/${id}/history`
+  );
+
+  const isLoading = readerLoading || historyLoading;
+  const error = readerError || historyError;
 
   if (isLoading) {
     return (
@@ -72,7 +58,7 @@ export default function ReaderHistoryPage() {
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-          {error}
+          {error.message}
         </div>
       )}
 
@@ -80,9 +66,11 @@ export default function ReaderHistoryPage() {
       {reader && (
         <div className="mb-8 p-5 bg-white border border-gray-200 rounded-xl flex items-center gap-4">
           {reader.avatar_url ? (
-            <img
+            <Image
               src={reader.avatar_url}
               alt=""
+              width={56}
+              height={56}
               className="w-14 h-14 rounded-full"
             />
           ) : (
@@ -110,7 +98,7 @@ export default function ReaderHistoryPage() {
       {/* AI Recommendations */}
       {reader && <ReaderRecommendations userId={id} />}
 
-      {history.length === 0 ? (
+      {!history || history.length === 0 ? (
         <p className="text-gray-500 italic">This reader has no borrow history.</p>
       ) : (
         <div className="overflow-x-auto">

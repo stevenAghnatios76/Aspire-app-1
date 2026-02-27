@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { api, type DiscoveredBook } from "@/lib/api";
 import Link from "next/link";
+import Image from "next/image";
 import BookRequestModal from "@/components/BookRequestModal";
 
 export default function DiscoverPage() {
@@ -104,10 +105,12 @@ export default function DiscoverPage() {
             >
               <div className="aspect-[3/4] bg-gray-100 flex items-center justify-center relative">
                 {book.cover_url ? (
-                  <img
+                  <Image
                     src={book.cover_url}
                     alt={book.title}
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                   />
                 ) : (
                   <span className="text-4xl">📖</span>

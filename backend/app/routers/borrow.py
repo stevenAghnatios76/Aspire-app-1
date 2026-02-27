@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.core.auth import get_current_user, require_librarian
 from app.core.supabase import get_supabase_admin
 from app.schemas.borrow import (
@@ -8,7 +8,6 @@ from app.schemas.borrow import (
     BorrowHistoryItem,
     OverdueBorrowRecord,
 )
-from app.services.overdue import mark_overdue_records
 from datetime import datetime, timedelta, timezone
 from typing import List
 
@@ -16,12 +15,11 @@ router = APIRouter(prefix="/api/borrow", tags=["borrow"])
 
 
 @router.post("", response_model=BorrowRecordResponse, status_code=status.HTTP_201_CREATED)
-async def borrow_book(
+def borrow_book(
     request: BorrowRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """Borrow a book (any authenticated user)."""
-    mark_overdue_records()
     supabase = get_supabase_admin()
     user_id = current_user["id"]
     book_id = request.book_id
@@ -75,7 +73,7 @@ async def borrow_book(
 
 
 @router.post("/return", response_model=BorrowRecordResponse)
-async def return_book(
+def return_book(
     request: ReturnRequest,
     current_user: dict = Depends(get_current_user),
 ):
@@ -126,11 +124,10 @@ async def return_book(
 
 
 @router.get("/history", response_model=List[BorrowHistoryItem])
-async def get_my_history(
+def get_my_history(
     current_user: dict = Depends(get_current_user),
 ):
     """Get the current user's borrow history."""
-    mark_overdue_records()
     supabase = get_supabase_admin()
     user_id = current_user["id"]
 
@@ -145,12 +142,36 @@ async def get_my_history(
     return result.data or []
 
 
+@router.get("/active")
+def get_active_borrow(
+    book_id: str = Query(..., description="Book ID to check"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Check if the current user has an active/pending borrow for a specific book.
+    Returns the borrow record if found, or null."""
+    supabase = get_supabase_admin()
+    user_id = current_user["id"]
+
+    result = (
+        supabase.table("borrow_records")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("book_id", book_id)
+        .in_("status", ["pending", "active", "overdue", "pending_return"])
+        .maybe_single()
+        .execute()
+    )
+
+    return result.data
+
+    return result.data or []
+
+
 @router.get("/overdue", response_model=List[OverdueBorrowRecord])
-async def get_overdue_records(
+def get_overdue_records(
     current_user: dict = Depends(require_librarian),
 ):
     """Get all overdue borrow records (librarian only)."""
-    mark_overdue_records()
     supabase = get_supabase_admin()
 
     result = (
